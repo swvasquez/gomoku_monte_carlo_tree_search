@@ -1,9 +1,9 @@
-package monte_carlo_tree_search
+package main
 
 import (
+	"fmt"
 	"math"
 	"math/rand"
-	"time"
 )
 
 type Board struct {
@@ -29,31 +29,31 @@ type mctsTree struct {
 
 func updateOrder(s []State) {
 	for i := 0; i < 18; i++ {
-		if s[i].ucb1 < s[i+1].ucb1 {
+		if s[i].ucb1 > s[i+1].ucb1 {
 			break
 		}
 		s[i], s[i+1] = s[i+1], s[i]
 	}
 
 }
-func max(x int, y int) int {
-	if x >= y {
-		return x
-	}
-	return y
-}
 
-func min(x int, y int) int {
-	if x <= y {
-		return x
+func displayBoard(b *Board) {
+	var top [19]int
+	for i := 0; i < 19; i++ {
+		top[i] = i % 10
 	}
-	return y
+	fmt.Println(top)
+	fmt.Print("\n")
+	for i := 18; i >= 0; i-- {
+		fmt.Println(b.board[i], " ", i)
+	}
+	fmt.Println("\n")
 }
 
 func checkDiagonalDown(s *[19][19]int) int {
 	var total int
-	for i := 5 - 1; i < 19; i++ {
-		for j := 0; j < i-5; i++ {
+	for i := 4; i < 19; i++ {
+		for j := 0; j < i-3; i++ {
 			total = 0
 			for k := j; k < j+5; j++ {
 				total = total + s[i-k][k]
@@ -66,8 +66,8 @@ func checkDiagonalDown(s *[19][19]int) int {
 		}
 	}
 
-	for j := 1; j < 19-5; j++ {
-		for i := 0; i < 19-j-5+1; i++ {
+	for j := 0; j < 15; j++ {
+		for i := 0; i < 19-j; i++ {
 			total = 0
 			for k := i; k < i+5; k++ {
 				total = total + s[18-k][j+k]
@@ -84,11 +84,11 @@ func checkDiagonalDown(s *[19][19]int) int {
 
 func checkDiagonalUp(s *[19][19]int) int {
 	var total int
-	for i := 5 - 1; i < 19; i++ {
-		for j := 0; j < i-5; i++ {
+	for i := 0; i < 15; i++ {
+		for j := 0; j < 19-i; i++ {
 			total = 0
 			for k := j; k < j+5; j++ {
-				total = total + s[i-k][k]
+				total = total + s[k+i][k]
 			}
 			if total == 5 {
 				return 1
@@ -99,11 +99,11 @@ func checkDiagonalUp(s *[19][19]int) int {
 
 	}
 
-	for j := 1; j < 19-5; j++ {
-		for i := 0; i < 19-j-5+1; i++ {
+	for j := 1; j < 15; j++ {
+		for i := 0; i < 15-j; i++ {
 			total = 0
 			for k := i; k < i+5; k++ {
-				total = total + s[18-k][j+k]
+				total = total + s[k][j+k]
 			}
 			if total == 5 {
 				return 1
@@ -121,7 +121,7 @@ func checkHorizontal(s *[19][19]int) int {
 	for i := 0; i < 19; i++ {
 		for j := 0; j < 15; j++ {
 			total = 0
-			for k := j; k <= j+5; k++ {
+			for k := j; k < j+5; k++ {
 				total = total + s[i][k]
 			}
 			if total == 5 {
@@ -136,11 +136,11 @@ func checkHorizontal(s *[19][19]int) int {
 
 func checkVertical(s *[19][19]int) int {
 	var total int
-	for i := 0; i < 19; i++ {
-		for j := 0; j < 15; j++ {
+	for j := 0; j < 19; j++ {
+		for i := 0; i < 15; i++ {
 			total = 0
-			for k := j; k <= j+5; k++ {
-				total = total + s[i][k]
+			for k := i; k < i+5; k++ {
+				total = total + s[k][j]
 			}
 			if total == 5 {
 				return 1
@@ -151,14 +151,15 @@ func checkVertical(s *[19][19]int) int {
 	}
 	return 0
 }
+
 func checkFull(heights *[19]int) bool {
 	var fillCount int
-	full := true
-	for i := 0; i <= 19; i++ {
+	full := false
+	for i := 0; i < 19; i++ {
 		fillCount = fillCount + heights[i]
 	}
 	if fillCount == 19*19 {
-		full = false
+		full = true
 	}
 	return full
 }
@@ -171,13 +172,12 @@ func checkState(b *Board) string {
 	if checkFull(&b.heights) {
 		state = "tie"
 	}
-	score = score +
-		checkHorizontal(&b.board) +
-		checkVertical(&b.board) +
-		checkDiagonalDown(&b.board) +
-		checkDiagonalUp(&b.board)
-
-	if score >= -1 {
+	//score = score +
+	//	checkHorizontal(&b.board) +
+	//	checkVertical(&b.board) +
+	//	checkDiagonalDown(&b.board) +
+	//	checkDiagonalUp(&b.board)
+	if score <= -1 {
 		state = "lose"
 	} else if score >= 1 {
 		state = "win"
@@ -195,28 +195,39 @@ func ucb1(s *State) float64 {
 }
 
 func mctsInit() *mctsTree {
-	root := State{id: 0, visits: 0, ucb1: math.Inf(0)}
-	tree := mctsTree{&root, 0}
+	root_board := Board{player: 1}
+	root := State{id: 0, visits: 0, ucb1: math.Inf(0), board: &root_board}
+	root.children = createChildren(&root, 1)
+	tree := mctsTree{&root, 20}
+
 	return &tree
 }
 
 func selectPath(s *State) *State {
+	//fmt.Println("new path starting at", s.id)
 	current := s
+
 	for {
+		current.visits++
 		if current.children == nil {
+			//fmt.Println("end path at", current.id)
 			break
 		}
+		//fmt.Println("next_node", current.children[0].id)
+
 		current = &current.children[0]
+
 	}
 	return current
 }
 
 func nextMove(b *Board) int {
 	var next int
+
 	for {
-		rand.Seed(time.Now().Unix())
+		//rand.Seed(time.Now().Unix())
 		next = rand.Int() % len(b.heights)
-		if b.heights[next] != 18 {
+		if b.heights[next] != 19 {
 			break
 		}
 	}
@@ -240,47 +251,49 @@ func expand(b Board) int {
 			break
 		}
 		player = b.player
-		next = nextMove(&b)
 
+		next = nextMove(&b)
+		b.board[b.heights[next]][next] = (player+2)%2 + 1
+		b.player = (player+2)%2 + 1
 		b.heights[next]++
-		b.board[next][b.heights[next]] = player * -1
-		b.player = player * -1
 	}
+
 	return score[state]
 }
 
-func backpropogate(s *State, score int) {
+func backpropagate(s *State, score int) {
 	current := s
 	for {
-		current.visits++
 		current.value = current.value + score
-		updateOrder(current.children)
 		if current.parent == nil {
 			break
 		}
 		current.ucb1 = ucb1(current)
 		current = current.parent
+		updateOrder(current.children)
 	}
 }
 
 func createChildren(current *State, id int) []State {
+	//fmt.Println("Creating children for node", current.id)
 	boards := make([]Board, 0, 19)
 	children := make([]State, 0, 19)
-
 	heights := current.board.heights
 	var height int
-	nextId := id + 1
+	nextId := id
 
+	nextPlayer := (current.board.player+2)%2 + 1
 	for i := 0; i < 19; i++ {
 		height = heights[i]
 		if height < 19 {
 			boards = append(boards, Board{current.board.board,
 				current.board.heights,
-				current.board.player * -1})
+				nextPlayer})
 
-			boards[i].board[height+1][i] = -1 * current.board.player
+			boards[i].board[height][i] = nextPlayer
 			boards[i].heights[i]++
-			boards[i].player = -1 * current.board.player
+			boards[i].player = nextPlayer
+			//fmt.Println("creating child", nextId, "at position", i)
 			children = append(children, State{id: nextId,
 				ucb1:   math.Inf(0),
 				parent: current,
@@ -293,23 +306,35 @@ func createChildren(current *State, id int) []State {
 }
 
 func main() {
-	iterations := 100
+
+	iterations := 1000
 	//Create root node and initialize MCTree
 	tree := mctsInit()
-
+	displayBoard(tree.root.board)
 	var leaf *State
 	var score int
 
 	for i := 0; i < iterations; i++ {
-
+		fmt.Println("\nNew iteration starting at", tree.root.id)
 		leaf = selectPath(tree.root)
-		if leaf.visits > 0 || leaf.id == 0 {
-			createChildren(leaf, tree.elements)
+		if leaf.visits > 1 {
+			fmt.Println("Creating children for leaf", leaf.id)
+			leaf.children = createChildren(leaf, tree.elements)
 			tree.elements = tree.elements + 19
 			leaf = &leaf.children[0]
+			leaf.visits++
 		}
+		fmt.Println("Expanding from leaf", leaf.id)
 		score = expand(*leaf.board)
-		backpropogate(leaf, score)
+		fmt.Println("Backpropagating")
+		backpropagate(leaf, score)
 
+	}
+	for i := 0; i < 19; i++ {
+		fmt.Print(tree.root.children[i].id, " ")
+	}
+	fmt.Print("\n")
+	for i := 0; i < 19; i++ {
+		fmt.Print(tree.root.children[i].visits, " ")
 	}
 }

@@ -22,20 +22,21 @@ type State struct {
 	ucb1     float64
 	board    *Board
 	parent   *State
-	children []State
+	children []*State
 }
 
 type mctsTree struct {
 	root     *State
 	elements int
+	depth    int
 }
 
-func updateOrder(s []State) {
-	for i := 0; i < 18; i++ {
-		if s[i].ucb1 > s[i+1].ucb1 {
+func updateOrder(s []*State) {
+	for i := len(s) - 1; i > 0; i-- {
+		if s[i].ucb1 > s[i-1].ucb1 {
 			break
 		}
-		s[i], s[i+1] = s[i+1], s[i]
+		s[i], s[i-1] = s[i-1], s[i]
 	}
 
 }
@@ -215,27 +216,52 @@ func ucb1(s *State) float64 {
 	return score
 }
 
+func ucb1Update(s *State) {
+	for _, val := range s.children {
+		val.ucb1 = ucb1(val)
+	}
+}
+
+func ucb1Max(s *State) *State {
+	maxState := s.children[0]
+	max := maxState.ucb1
+
+	for _, val := range s.children {
+		if val.ucb1 > max {
+			maxState = val
+		}
+	}
+	return maxState
+}
+
 func mctsInit(root *[19][19]int, player int) *mctsTree {
-	root_board := Board{}
-	root_board.board = *root
-	root_board.player = player
-	root_state := State{id: 0, visits: 0, ucb1: math.Inf(0), board: &root_board}
-	root_state.children = createChildren(&root_state, 1)
-	tree := mctsTree{&root_state, 20}
+	rootBoard := Board{}
+	rootBoard.board = *root
+	rootBoard.player = player
+	rootState := State{id: 0, visits: 0, ucb1: math.Inf(0), board: &rootBoard, children: make([]*State, 0, 19)}
+	tree := mctsTree{root: &rootState}
 
 	return &tree
 }
 
-func selectPath(s *State) *State {
-	current := s
+func selectPath(tree *mctsTree) (*State, int) {
+	current := tree.root
+	depth := 0
 	for {
 		current.visits++
+		children := len(current.children)
 		if current.children == nil {
 			break
 		}
-		current = &current.children[0]
+		if children < 19 {
+			current = createChild(current, tree)
+		} else {
+			ucb1Update(current)
+			current = ucb1Max(current)
+		}
+		depth++
 	}
-	return current
+	return current, depth
 }
 
 func nextMove(b *Board) int {
@@ -286,39 +312,42 @@ func backpropagate(s *State, score int) {
 		if current.parent == nil {
 			break
 		}
-		current.ucb1 = ucb1(current)
 		current = current.parent
-		updateOrder(current.children)
 	}
 }
 
-func createChildren(current *State, id int) []State {
-	boards := make([]Board, 0, 19)
-	children := make([]State, 0, 19)
-	heights := current.board.heights
-	var height int
-	nextId := id
-
-	nextPlayer := 8 - current.board.player
-	for i := 0; i < 19; i++ {
-		height = heights[i]
-		if height < 19 {
-			boards = append(boards, Board{current.board.board,
-				current.board.heights,
-				nextPlayer})
-
-			boards[i].board[height][i] = nextPlayer
-			boards[i].heights[i]++
-			boards[i].player = nextPlayer
-			children = append(children, State{id: nextId,
-				ucb1:   math.Inf(0),
-				parent: current,
-				board:  &boards[i]})
-			nextId++
-		}
-
+func createChild(current *State, tree *mctsTree) *State {
+	if current.children == nil {
+		current.children = make([]*State, 0, 19)
 	}
-	return children
+	count := len(current.children)
+	nextPlayer := 8 - current.board.player
+	var height int
+	for i := 0; i < 18; i++ {
+		height = current.board.heights[count]
+		if height < 18 {
+			break
+		}
+		count++
+	}
+
+	nextId := current.id*19 + count + 1
+	nextBoard := Board{current.board.board,
+		current.board.heights,
+		nextPlayer}
+	nextBoard.board[height][count] = nextPlayer
+	nextBoard.heights[count]++
+	nextBoard.player = nextPlayer
+	nextState := State{id: nextId,
+		ucb1:   math.Inf(0),
+		parent: current,
+		board:  &nextBoard}
+	current.children = append(current.children, &nextState)
+	tree.elements++
+	return &nextState
+}
+func expansion(s *State) {
+
 }
 
 func main() {
@@ -332,38 +361,43 @@ func main() {
 	// board here.
 	var init_board [19][19]int
 	init_player := 1
-
 	tree := mctsInit(&init_board, init_player)
 	var leaf *State
 	var score int
+	var depth int
 
 	// Selects path from root to leaf.
 	for i := 0; i < iterations; i++ {
-		leaf = selectPath(tree.root)
+		leaf, depth = selectPath(tree)
 		if leaf.visits > 1 {
-			leaf.children = createChildren(leaf, tree.elements)
-			tree.elements = tree.elements + 19
-			leaf = &leaf.children[0]
+			createChild(leaf, tree)
+			leaf = leaf.children[0]
+			depth++
 			leaf.visits++
 		}
+
 		// Expands the leaf node by playing randomly.
 		score = expand(*leaf.board)
 
 		// Backpropagate results all the way up to root.
 		backpropagate(leaf, score)
+
+		if depth > tree.depth {
+			tree.depth = depth
+		}
 	}
 
 	// Display results: node ids and visit counts.
 	// The node with the max value corresponds to the column
 	// the next move should take place at.
-	var output [19]int
-	for i := 0; i < 19; i++ {
-		output[tree.root.children[i].id-1] = tree.root.children[i].visits
+	var output []int
+	for _, val := range tree.root.children {
+		output = append(output, val.visits)
 	}
-
+	fmt.Printf("\n%d Nodes, %d Max Depth", tree.elements, tree.depth)
 	fmt.Printf("\n%v\n", "RESULTS")
 	fmt.Println("N  V")
-	for i := 0; i < 19; i++ {
-		fmt.Printf("%02d %d\n", i, output[i])
+	for idx, val := range output {
+		fmt.Printf("%02d %d\n", idx, val)
 	}
 }

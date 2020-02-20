@@ -359,9 +359,9 @@ func main() {
 	// Create root node and initialize MCTree.
 	// Set another initial value other than the empty
 	// board here.
-	var init_board [19][19]int
-	init_player := 1
-	tree := mctsInit(&init_board, init_player)
+	var initBoard [19][19]int
+	initPlayer := 1
+	tree := mctsInit(&initBoard, initPlayer)
 	var leaf *State
 	var score int
 	var depth int

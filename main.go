@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"runtime"
 	"time"
 )
 
@@ -13,12 +14,14 @@ type Board struct {
 	board   [19][19]int
 	heights [19]int
 	player  int
+	last    [2]int
 }
 
 type State struct {
 	id       int
 	visits   int
 	value    int
+	preval   int
 	ucb1     float64
 	board    *Board
 	parent   *State
@@ -29,6 +32,11 @@ type mctsTree struct {
 	root     *State
 	elements int
 	depth    int
+}
+
+type Packet struct {
+	board  Board
+	visits [19]int
 }
 
 func updateOrder(s []*State) {
@@ -55,107 +63,28 @@ func displayBoard(b *[19][19]int) {
 	fmt.Printf("\n\n")
 }
 
-func checkDiagonalDown(s *[19][19]int) int {
-	var total int
-	for i := 4; i < 19; i++ {
-		for j := 0; j < i-3; j++ {
-			total = 0
-			for k := j; k < j+5; k++ {
-				total = total + s[i-k][k]
-			}
-			if total == 5 {
-				return 1
-			} else if total == 35 {
-				return -1
-			}
-		}
-	}
-
-	for j := 0; j < 15; j++ {
-		for i := 0; i < 15-j; i++ {
-			total = 0
-			for k := i; k < i+5; k++ {
-				total = total + s[18-k][j+k]
-			}
-			if total == 5 {
-				return 1
-			} else if total == 35 {
-				return -1
-			}
-		}
-	}
-	return 0
-}
-
-func checkDiagonalUp(s *[19][19]int) int {
-	var total int
-	for i := 0; i < 15; i++ {
-		for j := 0; j < 15-i; j++ {
-			total = 0
-			for k := j; k < j+5; k++ {
-				total = total + s[k+i][k]
-			}
-			if total == 5 {
-				return 1
-			} else if total == 35 {
-				return -1
-			}
-		}
-
-	}
-
-	for j := 1; j < 15; j++ {
-		for i := 0; i < 15-j; i++ {
-			total = 0
-			for k := i; k < i+5; k++ {
-				total = total + s[k][j+k]
-			}
-			if total == 5 {
-				return 1
-			} else if total == 35 {
-				return -1
-			}
-		}
-	}
-	return 0
-
-}
-
-func checkHorizontal(s *[19][19]int) int {
-	var total int
+func checkBoard(s *[19][19]int) int {
+	var memo [21][21][2][4]int
+	row := -1
+	val := 0
 	for i := 0; i < 19; i++ {
-		for j := 0; j < 15; j++ {
-			total = 0
-			for k := j; k < j+5; k++ {
-				total = total + s[i][k]
-			}
-			if total == 5 {
-				return 1
-			} else if total == 35 {
-				return -1
-			}
-		}
-	}
-	return 0
-}
-
-func checkVertical(s *[19][19]int) int {
-	var total int
-	for j := 0; j < 19; j++ {
-		for i := 0; i < 15; i++ {
-			total = 0
-			for k := i; k < i+5; k++ {
-				total = total + s[k][j]
-			}
-			if total == 5 {
-
-				return 1
-			} else if total == 35 {
-				return -1
+		for j := 0; j < 19; j++ {
+			val = s[i][j]
+			row = (val % 5) - 1
+			if row != -1 {
+				memo[i+1][j+1][row][0] = 1 + memo[i+1][j][row][0]
+				memo[i+1][j+1][row][1] = 1 + memo[i][j+1][row][1]
+				memo[i+1][j+1][row][2] = 1 + memo[i][j][row][2]
+				memo[i+1][j+1][row][3] = 1 + memo[i][j+2][row][3]
+				for k := 0; k < 4; k++ {
+					if memo[i+1][j+1][row][k] == 5 {
+						return (-val + 4) / 3
+					}
+				}
 			}
 		}
 	}
-	return 0
+	return val
 }
 
 func checkFull(heights *[19]int) bool {
@@ -178,26 +107,7 @@ func checkState(b *Board) string {
 	if checkFull(&b.heights) {
 		state = "tie"
 	}
-
-	for {
-		score = checkHorizontal(&b.board)
-		if score == 1 || score == -1 {
-			break
-		}
-		score = checkVertical(&b.board)
-		if score == 1 || score == -1 {
-			break
-		}
-		score = checkDiagonalDown(&b.board)
-		if score == 1 || score == -1 {
-			break
-		}
-		score = checkDiagonalUp(&b.board)
-		if score == 1 || score == -1 {
-			break
-		}
-		break
-	}
+	score = checkBoard(&b.board)
 
 	if score == -1 {
 		state = "lose"
@@ -234,13 +144,9 @@ func ucb1Max(s *State) *State {
 	return maxState
 }
 
-func mctsInit(root *[19][19]int, player int) *mctsTree {
-	rootBoard := Board{}
-	rootBoard.board = *root
-	rootBoard.player = player
-	rootState := State{id: 0, visits: 0, ucb1: math.Inf(0), board: &rootBoard, children: make([]*State, 0, 19)}
+func mctsInit(b *Board) *mctsTree {
+	rootState := State{id: 0, visits: 0, ucb1: math.Inf(0), board: b, children: make([]*State, 0, 19)}
 	tree := mctsTree{root: &rootState}
-
 	return &tree
 }
 
@@ -330,44 +236,35 @@ func createChild(current *State, tree *mctsTree) *State {
 		}
 		count++
 	}
-
 	nextId := current.id*19 + count + 1
-	nextBoard := Board{current.board.board,
-		current.board.heights,
-		nextPlayer}
+	nextBoard := Board{board: current.board.board,
+		heights: current.board.heights,
+		player:  nextPlayer}
 	nextBoard.board[height][count] = nextPlayer
 	nextBoard.heights[count]++
 	nextBoard.player = nextPlayer
+	nextBoard.last[0] = height
+	nextBoard.last[1] = count
 	nextState := State{id: nextId,
 		ucb1:   math.Inf(0),
 		parent: current,
-		board:  &nextBoard}
+		board:  &nextBoard,
+		preval: 2}
 	current.children = append(current.children, &nextState)
 	tree.elements++
 	return &nextState
 }
-func expansion(s *State) {
 
-}
-
-func main() {
-
-	// Define how long you want to run the algorithm.
-	iterations := 100000
-	rand.Seed(time.Now().Unix())
-
-	// Create root node and initialize MCTree.
-	// Set another initial value other than the empty
-	// board here.
-	var initBoard [19][19]int
-	initPlayer := 1
-	tree := mctsInit(&initBoard, initPlayer)
+func run(runtime int, c chan Packet) {
+	b := <-c
+	tree := mctsInit(&b.board)
 	var leaf *State
 	var score int
 	var depth int
 
 	// Selects path from root to leaf.
-	for i := 0; i < iterations; i++ {
+	start := time.Now()
+	for {
 		leaf, depth = selectPath(tree)
 		if leaf.visits > 1 {
 			createChild(leaf, tree)
@@ -385,19 +282,109 @@ func main() {
 		if depth > tree.depth {
 			tree.depth = depth
 		}
+
+		end := time.Now()
+		diff := end.Sub(start).Seconds()
+		if diff > float64(runtime) {
+			fmt.Println("tree depth", tree.depth)
+			fmt.Println("nodes", tree.elements)
+			break
+		}
+	}
+	var max_visits int
+	var best_move *Board
+	for i, val := range tree.root.children {
+		b.visits[i] = val.visits
+		if b.visits[i] > max_visits {
+			max_visits = b.visits[i]
+			best_move = val.board
+		}
+	}
+	b.board = *best_move
+	c <- b
+}
+
+func play(b *Board, channels int, runtime int) {
+	chans := make([]chan Packet, channels, 12)
+	outputs := make([]Packet, channels, 12)
+
+	for i := range chans {
+		chans[i] = make(chan Packet)
+	}
+	// Create root node and initialize MCTree.
+	// Set another initial value other than the empty
+	// board here.
+
+	root := Packet{board: *b}
+	for _, channel := range chans {
+		go run(runtime, channel)
+		channel <- root
+	}
+
+	for i, channel := range chans {
+		outputs[i] = <-channel
 	}
 
 	// Display results: node ids and visit counts.
 	// The node with the max value corresponds to the column
 	// the next move should take place at.
-	var output []int
-	for _, val := range tree.root.children {
-		output = append(output, val.visits)
+	var output [19]float32
+	var max float32
+	var next Board
+	for i := 0; i < 19; i++ {
+		for _, packet := range outputs {
+			output[i] += float32(packet.visits[i]) / 3
+
+			if output[i] > max {
+				max = output[i]
+				next = packet.board
+
+			}
+		}
 	}
-	fmt.Printf("\n%d Nodes, %d Max Depth", tree.elements, tree.depth)
+	displayBoard(&next.board)
+	fmt.Println(next.last[0], next.last[1])
+	b.board[next.last[0]][next.last[1]] = next.player
+	b.heights[next.last[1]] += 1
+	b.player = next.player
+
+	for i := 0; i < 19; i++ {
+		output[i] = output[i] / max
+	}
 	fmt.Printf("\n%v\n", "RESULTS")
 	fmt.Println("N  V")
 	for idx, val := range output {
-		fmt.Printf("%02d %d\n", idx, val)
+		fmt.Printf("%02d %f\n", idx, val)
+	}
+}
+
+func main() {
+
+	// Define how long you want to run the algorithm.
+	rand.Seed(time.Now().Unix())
+	runtime.GOMAXPROCS(runtime.NumCPU())
+
+	// Create root node and initialize MCTree.
+	// Set another initial value other than the empty
+	// board here.
+	var initState [19][19]int
+	initPlayer := 1
+	gameBoard := Board{board: initState, player: initPlayer}
+	moveTime := 20
+	p1Channels := 3
+	p2Channels := 3
+
+	for {
+		play(&gameBoard, p1Channels, moveTime)
+		//displayBoard(&gameBoard.board)
+		if checkState(&gameBoard) != "in_play" {
+			break
+		}
+		play(&gameBoard, p2Channels, moveTime)
+		//displayBoard(&gameBoard.board)
+		if checkState(&gameBoard) != "in_play" {
+			break
+		}
+
 	}
 }

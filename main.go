@@ -143,7 +143,12 @@ func ucb1Max(s *State) *State {
 }
 
 func mctsInit(b *Board) *mctsTree {
-	rootState := State{id: 0, visits: 0, ucb1: math.Inf(0), board: b, children: make([]*State, 0, 19)}
+	rootState := State{
+		id: 0, visits: 0,
+		ucb1:     math.Inf(0),
+		board:    b,
+		children: make([]*State, 0, 19),
+	}
 	tree := mctsTree{root: &rootState}
 	return &tree
 }
@@ -367,7 +372,7 @@ func play(b *Board, channels int, runtime int) {
 func main() {
 	// This pits two MTCS algorithms against one another. Each "player"
 	// can use a different number of goroutines. This is done to see
-	// how parallelization effects the decision process.
+	// how parallelization affects the decision process.
 
 	// Define how long you want to run the algorithm.
 	rand.Seed(time.Now().Unix())

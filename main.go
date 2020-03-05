@@ -1,5 +1,7 @@
-// A simple script that runs a Monte Carlo Tree Search
-// on a 19 by 19 Gomoku board (five-in-a-row).
+// A simple script that runs a Monte Carlo Tree Search on a 19 by 19 Gomoku board (five-in-a-row). Currently, moves are
+// made similar to Connect 4, where pieces move to the lowest available position in a given column. This is just to
+// reduce the complexity while developing the code.
+
 package main
 
 import (
@@ -39,18 +41,8 @@ type Packet struct {
 	visits [19]int
 }
 
-func updateOrder(s []*State) {
-	for i := len(s) - 1; i > 0; i-- {
-		if s[i].ucb1 > s[i-1].ucb1 {
-			break
-		}
-		s[i], s[i-1] = s[i-1], s[i]
-	}
-
-}
-
-// Not used in code, but append use when
-// you want to view the board state.
+// Displays the current board state. Players' moves are represented
+// by 1s and 7s for visual simplicity.
 func displayBoard(b *[19][19]int) {
 	var top [19]int
 	for i := 0; i < 19; i++ {
@@ -63,6 +55,8 @@ func displayBoard(b *[19][19]int) {
 	fmt.Printf("\n\n")
 }
 
+// Checks if five consecutive pieces are found horizontally,
+// vertically, or along a diagonal.
 func checkBoard(s *[19][19]int) int {
 	var memo [21][21][2][4]int
 	row := -1
@@ -87,6 +81,7 @@ func checkBoard(s *[19][19]int) int {
 	return val
 }
 
+// Checks if the board is full.
 func checkFull(heights *[19]int) bool {
 	var fillCount int
 	full := false
@@ -99,6 +94,7 @@ func checkFull(heights *[19]int) bool {
 	return full
 }
 
+// Declares whether a game is in play or finished.
 func checkState(b *Board) string {
 	state := "in_play"
 	score := 0
@@ -117,6 +113,8 @@ func checkState(b *Board) string {
 	return state
 }
 
+// The UCB1 score is used to determine whether exploration or
+// exploitation should guide decision making.
 func ucb1(s *State) float64 {
 	visits := s.visits
 	value := s.value
@@ -150,16 +148,16 @@ func mctsInit(b *Board) *mctsTree {
 	return &tree
 }
 
+// This chooses a path, starting from the root and ending on a leaf.
+// This path is determined by the UCB1 scores of a node's children.
 func selectPath(tree *mctsTree) (*State, int) {
 	current := tree.root
 	depth := 0
 	for {
 		current.visits++
-		children := len(current.children)
 		if current.children == nil {
 			break
-		}
-		if children < 19 {
+		} else if len(current.children) < 19 {
 			current = createChild(current, tree)
 		} else {
 			ucb1Update(current)
@@ -170,6 +168,7 @@ func selectPath(tree *mctsTree) (*State, int) {
 	return current, depth
 }
 
+// Chooses a random move consistent with the constraints of the board.
 func nextMove(b *Board) int {
 	var next int
 
@@ -182,6 +181,10 @@ func nextMove(b *Board) int {
 	return next
 }
 
+// When a path ends on an unvisited leaf, it preforms a simulation
+// from that node, terminating when the game has ended. It returns
+// a 1 if player 1 one, -1 if player 1 lost, or 0 if the
+// game ended in a tie.
 func expand(b Board) int {
 
 	var next int
@@ -211,6 +214,8 @@ func expand(b Board) int {
 	return score[state]
 }
 
+// Updates the values of all the nodes along the current path with
+// the outcome from the above expansion.
 func backpropagate(s *State, score int) {
 	current := s
 	for {
@@ -243,8 +248,7 @@ func createChild(current *State, tree *mctsTree) *State {
 	nextBoard.board[height][count] = nextPlayer
 	nextBoard.heights[count]++
 	nextBoard.player = nextPlayer
-	nextBoard.last[0] = height
-	nextBoard.last[1] = count
+	nextBoard.last = [2]int{height, count}
 	nextState := State{id: nextId,
 		ucb1:   math.Inf(0),
 		parent: current,
@@ -255,6 +259,7 @@ func createChild(current *State, tree *mctsTree) *State {
 	return &nextState
 }
 
+// This goroutine runs one cycle of MTCS for a specified time limit.
 func run(runtime int, c chan Packet) {
 	b := <-c
 	tree := mctsInit(&b.board)
@@ -266,7 +271,7 @@ func run(runtime int, c chan Packet) {
 	start := time.Now()
 	for {
 		leaf, depth = selectPath(tree)
-		if leaf.visits > 1 {
+		if leaf.visits > 3 {
 			createChild(leaf, tree)
 			leaf = leaf.children[0]
 			depth++
@@ -304,6 +309,8 @@ func run(runtime int, c chan Packet) {
 	c <- b
 }
 
+// This aggregates the results from many "run" goroutines and
+// updates the board.
 func play(b *Board, channels int, runtime int) {
 	chans := make([]chan Packet, channels, 12)
 	outputs := make([]Packet, channels, 12)
@@ -314,7 +321,6 @@ func play(b *Board, channels int, runtime int) {
 	// Create root node and initialize MCTree.
 	// Set another initial value other than the empty
 	// board here.
-
 	root := Packet{board: *b}
 	for _, channel := range chans {
 		go run(runtime, channel)
@@ -359,6 +365,9 @@ func play(b *Board, channels int, runtime int) {
 }
 
 func main() {
+	// This pits two MTCS algorithms against one another. Each "player"
+	// can use a different number of goroutines. This is done to see
+	// how parallelization effects the decision process.
 
 	// Define how long you want to run the algorithm.
 	rand.Seed(time.Now().Unix())
@@ -371,17 +380,15 @@ func main() {
 	initPlayer := 1
 	gameBoard := Board{board: initState, player: initPlayer}
 	moveTime := 20
-	p1Channels := 3
-	p2Channels := 3
+	p1Channels := 1
+	p2Channels := 1
 
 	for {
 		play(&gameBoard, p1Channels, moveTime)
-		//displayBoard(&gameBoard.board)
 		if checkState(&gameBoard) != "in_play" {
 			break
 		}
 		play(&gameBoard, p2Channels, moveTime)
-		//displayBoard(&gameBoard.board)
 		if checkState(&gameBoard) != "in_play" {
 			break
 		}
